@@ -7,101 +7,116 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-sns.set_theme(style="whitegrid")
 
-
-def _save(fig: plt.Figure, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
-def plot_actual_vs_predicted(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    path: Path,
-    location_idx: int = 0,
-) -> None:
-    fig, ax = plt.subplots(figsize=(6, 6))
-    x = y_true[:, location_idx]
-    y = y_pred[:, location_idx]
-    ax.scatter(x, y, alpha=0.4, s=18)
-    min_v, max_v = float(np.min(x)), float(np.max(x))
-    ax.plot([min_v, max_v], [min_v, max_v], "r--", lw=2)
-    ax.set_title(f"Actual vs Predicted (Location {location_idx})")
-    ax.set_xlabel("Actual")
-    ax.set_ylabel("Predicted")
-    _save(fig, path)
-
-
-def plot_model_comparison(metrics_df: pd.DataFrame, path: Path) -> None:
-    melted = metrics_df.melt(id_vars=["Model"], value_vars=["MAE", "RMSE", "MAPE", "R2", "CV_RMSE"])
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(data=melted, x="Model", y="value", hue="variable", ax=ax)
-    ax.set_title("Model Performance Comparison")
-    ax.set_xlabel("Model")
-    ax.set_ylabel("Metric Value")
-    ax.tick_params(axis="x", rotation=20)
-    _save(fig, path)
-
-
-def plot_time_series(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    path: Path,
-    location_idx: int = 0,
-    max_points: int = 300,
-) -> None:
-    fig, ax = plt.subplots(figsize=(11, 4))
-    count = min(max_points, y_true.shape[0])
-    idx = np.arange(count)
-    ax.plot(idx, y_true[:count, location_idx], label="Actual", lw=2)
-    ax.plot(idx, y_pred[:count, location_idx], label="Predicted", lw=2)
-    ax.set_title(f"Traffic Flow Time Series (Location {location_idx})")
-    ax.set_xlabel("Quarter-hour Index")
-    ax.set_ylabel("Traffic Flow")
+def plot_actual_vs_predicted(y_test: np.ndarray, y_pred: np.ndarray, output_path: Path) -> None:
+    """Plot actual vs predicted values."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Flatten for visualization
+    y_test_flat = y_test.ravel()
+    y_pred_flat = y_pred.ravel()
+    
+    ax.scatter(y_test_flat, y_pred_flat, alpha=0.5, s=20)
+    
+    # Add perfect prediction line
+    min_val = min(y_test_flat.min(), y_pred_flat.min())
+    max_val = max(y_test_flat.max(), y_pred_flat.max())
+    ax.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction')
+    
+    ax.set_xlabel('Actual Values', fontsize=12)
+    ax.set_ylabel('Predicted Values', fontsize=12)
+    ax.set_title('Actual vs Predicted Traffic Flow (Linear Regression)', fontsize=14, fontweight='bold')
     ax.legend()
-    _save(fig, path)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"✓ Saved: {output_path}")
+
+
+def plot_model_comparison(metrics_df: pd.DataFrame, output_path: Path) -> None:
+    """Plot model performance metrics."""
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+    fig.suptitle('Linear Regression Performance Metrics', fontsize=16, fontweight='bold')
+    
+    axes = axes.ravel()
+    
+    metrics = ['MAE', 'RMSE', 'MAPE (%)', 'R²', 'CV RMSE', 'CV Std']
+    colors = plt.cm.Set2(np.linspace(0, 1, len(metrics_df)))
+    
+    for idx, metric in enumerate(metrics):
+        if metric in metrics_df.columns:
+            value = metrics_df.iloc[0][metric]
+            axes[idx].bar([0], [value], color=colors[0], width=0.5)
+            axes[idx].set_ylabel(metric, fontsize=11, fontweight='bold')
+            axes[idx].set_xticks([])
+            axes[idx].grid(True, alpha=0.3, axis='y')
+            axes[idx].text(0, value, f'{value:.4f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"✓ Saved: {output_path}")
+
+
+def plot_time_series(y_test: np.ndarray, y_pred: np.ndarray, output_path: Path) -> None:
+    """Plot time series prediction for first location."""
+    fig, ax = plt.subplots(figsize=(14, 6))
+    
+    # Use first location time series (36 locations, plot first one)
+    n_samples = y_test.shape[0]
+    time_steps = np.arange(min(200, n_samples))  # Show first 200 time steps
+    
+    ax.plot(time_steps, y_test[time_steps, 0], 'b-', linewidth=2, label='Actual', alpha=0.7)
+    ax.plot(time_steps, y_pred[time_steps, 0], 'r--', linewidth=2, label='Predicted', alpha=0.7)
+    
+    ax.set_xlabel('Time Step', fontsize=12)
+    ax.set_ylabel('Traffic Flow', fontsize=12)
+    ax.set_title('Time Series Prediction (Location 1)', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"✓ Saved: {output_path}")
 
 
 def plot_residual_analysis(
-    y_true: np.ndarray,
+    y_test: np.ndarray,
     y_pred: np.ndarray,
-    path_hist: Path,
-    path_scatter: Path,
-    location_idx: int = 0,
+    output_path_dist: Path,
+    output_path_scatter: Path,
 ) -> None:
-    residuals = y_true[:, location_idx] - y_pred[:, location_idx]
-
-    fig1, ax1 = plt.subplots(figsize=(8, 4))
-    sns.histplot(residuals, kde=True, ax=ax1)
-    ax1.set_title(f"Residual Distribution (Location {location_idx})")
-    ax1.set_xlabel("Residual")
-    _save(fig1, path_hist)
-
-    fig2, ax2 = plt.subplots(figsize=(8, 4))
-    ax2.scatter(y_pred[:, location_idx], residuals, alpha=0.4, s=16)
-    ax2.axhline(0, color="red", linestyle="--")
-    ax2.set_title(f"Residuals vs Predictions (Location {location_idx})")
-    ax2.set_xlabel("Predicted")
-    ax2.set_ylabel("Residual")
-    _save(fig2, path_scatter)
-
-
-def plot_feature_importance(
-    feature_importance: np.ndarray,
-    path: Path,
-    top_k: int = 20,
-) -> None:
-    top_k = min(top_k, feature_importance.shape[0])
-    sorted_idx = np.argsort(feature_importance)[::-1][:top_k]
-    values = feature_importance[sorted_idx]
-    labels = [f"PC{i + 1}" for i in sorted_idx]
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.barplot(x=values, y=labels, ax=ax)
-    ax.set_title("Top Feature Importances")
-    ax.set_xlabel("Importance")
-    ax.set_ylabel("Feature")
-    _save(fig, path)
+    """Plot residual distribution and residuals vs predictions."""
+    residuals = y_test - y_pred
+    residuals_flat = residuals.ravel()
+    y_pred_flat = y_pred.ravel()
+    
+    # Plot 1: Residual Distribution
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.hist(residuals_flat, bins=50, edgecolor='black', alpha=0.7, color='skyblue')
+    ax.axvline(residuals_flat.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: {residuals_flat.mean():.4f}')
+    ax.set_xlabel('Residuals', fontsize=12)
+    ax.set_ylabel('Frequency', fontsize=12)
+    ax.set_title('Residual Distribution', fontsize=14, fontweight='bold')
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
+    plt.tight_layout()
+    plt.savefig(output_path_dist, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"✓ Saved: {output_path_dist}")
+    
+    # Plot 2: Residuals vs Predictions
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.scatter(y_pred_flat, residuals_flat, alpha=0.5, s=20)
+    ax.axhline(0, color='red', linestyle='--', linewidth=2)
+    ax.set_xlabel('Predicted Values', fontsize=12)
+    ax.set_ylabel('Residuals', fontsize=12)
+    ax.set_title('Residuals vs Predicted Values', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path_scatter, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"✓ Saved: {output_path_scatter}")
