@@ -2,35 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import KFold, cross_val_score
-
-
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    mae = mean_absolute_error(y_true, y_pred)
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-
-    denom = np.where(np.abs(y_true) < 1e-6, np.nan, np.abs(y_true))
-    mape = np.nanmean(np.abs((y_true - y_pred) / denom)) * 100
-    if np.isnan(mape):
-        mape = float("nan")
-
-    r2 = r2_score(y_true, y_pred, multioutput="uniform_average")
-    return {"MAE": float(mae), "RMSE": float(rmse), "MAPE": float(mape), "R2": float(r2)}
-
-
-def cross_validated_rmse(model: object, X: np.ndarray, y: np.ndarray, cv: int = 5) -> float:
-    splitter = KFold(n_splits=cv, shuffle=True, random_state=42)
-    scores = cross_val_score(
-        clone(model),
-        X,
-        y,
-        cv=splitter,
-        scoring="neg_root_mean_squared_error",
-        n_jobs=1,
-    )
-    return float(-scores.mean())
+from sklearn.model_selection import cross_val_score
 
 
 def evaluate_predictions(
@@ -41,12 +13,44 @@ def evaluate_predictions(
     y_test: np.ndarray,
     cv: int = 3,
 ) -> pd.DataFrame:
-    rows = []
-    for name, y_pred in predictions.items():
-        metrics = compute_metrics(y_test, y_pred)
-        metrics["CV_RMSE"] = cross_validated_rmse(fitted_models[name], X_train, y_train, cv=cv)
-        metrics["Model"] = name
-        rows.append(metrics)
-
-    df = pd.DataFrame(rows)
-    return df[["Model", "MAE", "RMSE", "MAPE", "R2", "CV_RMSE"]].sort_values("RMSE")
+    """Evaluate model predictions with multiple metrics."""
+    
+    results = []
+    
+    for model_name, model in fitted_models.items():
+        y_pred = predictions[model_name]
+        
+        # Calculate metrics
+        mae = np.mean(np.abs(y_test - y_pred))
+        rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
+        
+        # MAPE with handling for zero values
+        mape = np.mean(np.abs((y_test - y_pred) / (np.abs(y_test) + 1e-8))) * 100
+        
+        # R² score
+        ss_res = np.sum((y_test - y_pred) ** 2)
+        ss_tot = np.sum((y_test - np.mean(y_test)) ** 2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+        
+        # Cross-validation RMSE
+        cv_scores = cross_val_score(
+            model, X_train, y_train, cv=cv, 
+            scoring='neg_mean_squared_error', n_jobs=-1
+        )
+        cv_rmse = np.sqrt(-cv_scores.mean())
+        cv_std = np.sqrt(cv_scores.std())
+        
+        results.append({
+            "Model": model_name,
+            "MAE": mae,
+            "RMSE": rmse,
+            "MAPE (%)": mape,
+            "R²": r2,
+            "CV RMSE": cv_rmse,
+            "CV Std": cv_std,
+        })
+    
+    df = pd.DataFrame(results)
+    # Sort by RMSE (best first)
+    df = df.sort_values("RMSE").reset_index(drop=True)
+    return df
